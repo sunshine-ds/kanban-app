@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kanban Board — Responsive Drag & Drop</title>
+  <meta name="description" content="A responsive, accessible Kanban board with drag & drop built with Tailwind CSS and vanilla JavaScript." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* tiny helpers beyond Tailwind */
+    .task-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      width: 18rem;
+      max-width: calc(100vw - 2rem);
+      opacity: 0.95;
+    }
+    .column-drop-highlight {
+      outline: 3px dashed rgba(59,130,246,0.35);
+      outline-offset: -10px;
+      transition: outline-offset 0.12s ease;
+    }
+    /* smooth card movement */
+    .task-card { transition: box-shadow .12s ease, transform .12s ease; }
+    .task-card:active { transform: scale(.995); }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 min-h-screen">
+  <div class="max-w-7xl mx-auto p-4">
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <svg class="w-10 h-10 text-blue-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+          <rect x="2" y="4" width="8" height="16" rx="2" fill="currentColor" opacity=".85" />
+          <rect x="9" y="4" width="13" height="9" rx="2" fill="currentColor" opacity=".5" />
+        </svg>
+        <div>
+          <h1 class="text-xl font-semibold">Kanban Board</h1>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Drag & drop tasks between columns • Mobile touch support • Persistent</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <input id="searchInput" type="search" placeholder="Search tasks..." class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="Search tasks" />
+
+        <button id="addBtn" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow" aria-haspopup="dialog">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Add Task
+        </button>
+
+        <div class="relative">
+          <button id="menuBtn" class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">Menu</button>
+          <div id="menu" class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
+            <button id="exportBtn" class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">Export JSON</button>
+            <button id="importBtn" class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">Import JSON</button>
+            <button id="clearBtn" class="w-full text-left px-3 py-2 text-red-600 hover:bg-gray-50 dark:hover:bg-gray-700">Clear Board</button>
+          </div>
+        </div>
+
+        <button id="themeToggle" class="p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700" aria-pressed="false" title="Toggle theme">
+          <svg id="themeIcon" class="w-5 h-5" viewBox="0 0 24 24" fill="none"><path d="M12 3v2M12 19v2M4.22 4.22 5.64 5.64M18.36 18.36 19.78 19.78M1 12h2M21 12h2M4.22 19.78 5.64 18.36M18.36 5.64 19.78 4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="mt-6">
+      <div id="board" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- columns will be injected here -->
+      </div>
+    </main>
+
+    <footer class="mt-8 text-sm text-gray-500 dark:text-gray-400">Built with ❤️ • Data stored in your browser (localStorage)</footer>
+  </div>
+
+  <!-- Add / Edit Modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-40">
+    <div class="w-full max-w-lg p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+      <h2 id="modalTitle" class="text-lg font-semibold mb-3">Add Task</h2>
+      <form id="taskForm" class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Title</label>
+          <input id="taskTitle" required class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Description</label>
+          <textarea id="taskDesc" rows="3" class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"></textarea>
+        </div>
+        <div class="flex gap-2 items-center">
+          <div class="flex-1">
+            <label class="block text-sm font-medium mb-1">Column</label>
+            <select id="taskColumn" class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"></select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Label</label>
+            <input id="taskTag" placeholder="e.g. UI, Bug" class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="cancelBtn" class="px-4 py-2 rounded-lg border border-gray-300">Cancel</button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Export / Import Modal -->
+  <div id="ioModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-40">
+    <div class="w-full max-w-2xl p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+      <h3 class="text-lg font-semibold mb-3">Export / Import Board JSON</h3>
+      <textarea id="ioArea" rows="10" class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 font-mono text-sm"></textarea>
+      <div class="flex justify-between items-center mt-3">
+        <div class="text-sm text-gray-500">You can copy the JSON to backup or paste JSON to restore.</div>
+        <div class="flex gap-2">
+          <button id="ioCancel" class="px-4 py-2 border rounded">Close</button>
+          <button id="ioImport" class="px-4 py-2 bg-green-600 text-white rounded">Import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Modal -->
+  <div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-40">
+    <div class="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+      <h4 class="text-lg font-semibold mb-2">Confirm</h4>
+      <p id="confirmMsg" class="text-sm text-gray-600 dark:text-gray-300 mb-4">Are you sure?</p>
+      <div class="flex justify-end gap-2">
+        <button id="confirmCancel" class="px-4 py-2 border rounded">Cancel</button>
+        <button id="confirmOk" class="px-4 py-2 bg-red-600 text-white rounded">Yes, proceed</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Kanban App Script
+    (function () {
+      // Columns definition
+      const DEFAULT_COLUMNS = [
+        { id: 'todo', title: 'To Do' },
+        { id: 'inprogress', title: 'In Progress' },
+        { id: 'done', title: 'Done' }
+      ];
+
+      const STORAGE_KEY = 'kanbanBoardV1';
+
+      // Elements
+      const boardEl = document.getElementById('board');
+      const addBtn = document.getElementById('addBtn');
+      const modal = document.getElementById('modal');
+      const modalTitle = document.getElementById('modalTitle');
+      const taskForm = document.getElementById('taskForm');
+      const taskTitle = document.getElementById('taskTitle');
+      const taskDesc = document.getElementById('taskDesc');
+      const taskColumn = document.getElementById('taskColumn');
+      const taskTag = document.getElementById('taskTag');
+      const cancelBtn = document.getElementById('cancelBtn');
+      const searchInput = document.getElementById('searchInput');
+      const menuBtn = document.getElementById('menuBtn');
+      const menu = document.getElementById('menu');
+      const exportBtn = document.getElementById('exportBtn');
+      const importBtn = document.getElementById('importBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const ioModal = document.getElementById('ioModal');
+      const ioArea = document.getElementById('ioArea');
+      const ioCancel = document.getElementById('ioCancel');
+      const ioImport = document.getElementById('ioImport');
+      const themeToggle = document.getElementById('themeToggle');
+      const themeIcon = document.getElementById('themeIcon');
+      const confirmModal = document.getElementById('confirmModal');
+      const confirmMsg = document.getElementById('confirmMsg');
+      const confirmOk = document.getElementById('confirmOk');
+      const confirmCancel = document.getElementById('confirmCancel');
+
+      let boardState = null; // will be object {columns:[], tasks:{id:task}}
+      let editingTaskId = null;
+
+      // Touch/drag state
+      let touchGhost = null;
+      let draggingEl = null;
+      let lastDropColumn = null;
+
+      // Utilities
+      function uid(prefix = '') {
+        return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      }
+
+      function saveBoard() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(boardState));
+      }
+
+      function loadBoard() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          try {
+            boardState = JSON.parse(raw);
+            // ensure columns exist
+            if (!Array.isArray(boardState.columns)) boardState.columns = DEFAULT_COLUMNS;
+            if (!boardState.tasks) boardState.tasks = {};
+            return;
+          } catch (e) {
+            console.error('Failed to parse board state', e);
+          }
+        }
+        // default seed
+        boardState = {
+          columns: DEFAULT_COLUMNS,
+          tasks: {
+            't1': { id: 't1', title: 'Design landing', desc: 'Create hero and CTA', column: 'todo', tag: 'Design', created: Date.now() },
+            't2': { id: 't2', title: 'Fix login bug', desc: 'Error 500 when logging in', column: 'inprogress', tag: 'Bug', created: Date.now() },
+            't3': { id: 't3', title: 'Write docs', desc: 'Add README for the project', column: 'done', tag: 'Docs', created: Date.now() }
+          }
+        };
+        saveBoard();
+      }
+
+      function renderBoard(filter = '') {
+        boardEl.innerHTML = '';
+        const filterText = filter.trim().toLowerCase();
+
+        boardState.columns.forEach(col => {
+          const colWrapper = document.createElement('section');
+          colWrapper.className = 'bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm flex flex-col min-h-[12rem]';
+          colWrapper.setAttribute('data-column-id', col.id);
+          colWrapper.setAttribute('aria-labelledby', `col-${col.id}-title`);
+
+          // column header
+          const header = document.createElement('div');
+          header.className = 'flex items-center justify-between mb-3';
+          header.innerHTML = `
+            <div class="flex items-center gap-2">
+              <h3 id="col-${col.id}-title" class="text-sm font-semibold">${escapeHtml(col.title)}</h3>
+              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">${countTasksIn(col.id)}</span>
+            </div>
+            <div class="flex gap-1">
+              <button class="move-col-left text-gray-400 hover:text-gray-600 px-2 py-1 rounded" title="Move column left">◀</button>
+              <button class="move-col-right text-gray-400 hover:text-gray-600 px-2 py-1 rounded" title="Move column right">▶</button>
+            </div>
+          `;
+          colWrapper.appendChild(header);
+
+          // drop area
+          const dropArea = document.createElement('div');
+          dropArea.className = 'flex-1 flex flex-col gap-3';
+          dropArea.setAttribute('data-drop-area', col.id);
+          dropArea.setAttribute('tabindex', '0');
+
+          // add tasks
+          const tasks = Object.values(boardState.tasks)
+            .filter(t => t.column === col.id)
+            .filter(t => !filterText || (t.title + ' ' + (t.desc||'') + ' ' + (t.tag||'')).toLowerCase().includes(filterText))
+            .sort((a,b)=> (b.created||0) - (a.created||0));
+
+          tasks.forEach(task => {
+            const card = document.createElement('article');
+            card.className = 'task-card bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 p-3 rounded-lg shadow-sm cursor-grab';
+            card.setAttribute('draggable', 'true');
+            card.setAttribute('data-task-id', task.id);
+            card.setAttribute('role', 'article');
+            card.innerHTML = `
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1">
+                  <h4 class="font-medium">${escapeHtml(task.title)}</h4>
+                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${escapeHtml(task.desc||'')}</p>
+                  ${task.tag ? `<div class="inline-block mt-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">${escapeHtml(task.tag)}</div>` : ''}
+                </div>
+                <div class="flex flex-col items-end gap-2">
+                  <div class="text-xs text-gray-400">${timeSince(task.created)}</div>
+                  <div class="flex gap-1">
+                    <button class="edit-task text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">Edit</button>
+                    <button class="delete-task text-sm px-2 py-1 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-700">Delete</button>
+                  </div>
+                </div>
+              </div>
+            `;
+
+            // events
+            setupDragFor(card);
+            setupCardButtons(card, task.id);
+
+            dropArea.appendChild(card);
+          });
+
+          // empty state
+          if (tasks.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'text-center text-sm text-gray-400 mt-4';
+            empty.textContent = 'No tasks';
+            dropArea.appendChild(empty);
+          }
+
+          // drop handlers on area
+          dropArea.addEventListener('dragover', ev => {
+            ev.preventDefault();
+            colWrapper.classList.add('column-drop-highlight');
+          });
+          dropArea.addEventListener('dragleave', ev => {
+            colWrapper.classList.remove('column-drop-highlight');
+          });
+          dropArea.addEventListener('drop', ev => {
+            ev.preventDefault();
+            colWrapper.classList.remove('column-drop-highlight');
+            const taskId = ev.dataTransfer && ev.dataTransfer.getData('text/plain');
+            if (taskId) moveTaskToColumn(taskId, col.id);
+          });
+
+          // keyboard move support: pressing Enter while focused prompts to add
+          dropArea.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') {
+              openAddModal(col.id);
+            }
+          });
+
+          colWrapper.appendChild(dropArea);
+
+          // footer - add quick add button
+          const footer = document.createElement('div');
+          footer.className = 'mt-3 text-right';
+          footer.innerHTML = `<button class="quick-add px-3 py-1 bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-200 rounded">+ Add</button>`;
+          footer.querySelector('.quick-add').addEventListener('click', () => openAddModal(col.id));
+
+          colWrapper.appendChild(footer);
+
+          boardEl.appendChild(colWrapper);
+        });
+
+        // attach column move handlers
+        document.querySelectorAll('.move-col-left').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const colId = e.target.closest('[data-column-id]').getAttribute('data-column-id');
+            moveColumn(colId, -1);
+          });
+        });
+        document.querySelectorAll('.move-col-right').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const colId = e.target.closest('[data-column-id]').getAttribute('data-column-id');
+            moveColumn(colId, +1);
+          });
+        });
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function countTasksIn(colId) {
+        return Object.values(boardState.tasks).filter(t => t.column === colId).length;
+      }
+
+      // Drag & drop
+      function setupDragFor(card) {
+        card.addEventListener('dragstart', (ev) => {
+          const id = card.getAttribute('data-task-id');
+          ev.dataTransfer.setData('text/plain', id);
+          ev.dataTransfer.effectAllowed = 'move';
+          card.classList.add('opacity-80');
+          draggingEl = card;
+        });
+        card.addEventListener('dragend', () => {
+          if (draggingEl) draggingEl.classList.remove('opacity-80');
+          draggingEl = null;
+        });
+
+        // touch fallback
+        card.addEventListener('touchstart', touchStartHandler, { passive: false });
+      }
+
+      function touchStartHandler(ev) {
+        const touch = ev.touches[0];
+        ev.preventDefault();
+        const card = ev.currentTarget;
+        const id = card.getAttribute('data-task-id');
+
+        // create ghost
+        touchGhost = card.cloneNode(true);
+        touchGhost.classList.add('task-ghost');
+        document.body.appendChild(touchGhost);
+        moveGhost(touch);
+        draggingEl = card;
+        lastDropColumn = null;
+
+        function onTouchMove(e) {
+          const t = e.touches[0];
+          moveGhost(t);
+          const el = document.elementFromPoint(t.clientX, t.clientY);
+          const dropArea = el && el.closest('[data-drop-area]');
+          document.querySelectorAll('[data-column-id]').forEach(c => c.classList.remove('column-drop-highlight'));
+          if (dropArea) {
+            const colWrap = dropArea.closest('[data-column-id]');
+            if (colWrap) {
+              colWrap.classList.add('column-drop-highlight');
+              lastDropColumn = dropArea.getAttribute('data-drop-area');
+            }
+          } else {
+            lastDropColumn = null;
+          }
+        }
+
+        function onTouchEnd(e) {
+          document.removeEventListener('touchmove', onTouchMove);
+          document.removeEventListener('touchend', onTouchEnd);
+          if (touchGhost && touchGhost.parentNode) touchGhost.parentNode.removeChild(touchGhost);
+          document.querySelectorAll('[data-column-id]').forEach(c => c.classList.remove('column-drop-highlight'));
+          if (lastDropColumn) moveTaskToColumn(id, lastDropColumn);
+          draggingEl = null;
+          touchGhost = null;
+          lastDropColumn = null;
+        }
+
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
+        document.addEventListener('touchend', onTouchEnd);
+      }
+
+      function moveGhost(touch) {
+        if (!touchGhost) return;
+        touchGhost.style.top = (touch.clientY) + 'px';
+        touchGhost.style.left = (touch.clientX) + 'px';
+      }
+
+      function moveTaskToColumn(taskId, columnId) {
+        const task = boardState.tasks[taskId];
+        if (!task) return;
+        task.column = columnId;
+        saveBoard();
+        renderBoard(searchInput.value || '');
+      }
+
+      // Card action buttons (edit/delete)
+      function setupCardButtons(card, taskId) {
+        const editBtn = card.querySelector('.edit-task');
+        const delBtn = card.querySelector('.delete-task');
+        editBtn.addEventListener('click', () => openEditModal(taskId));
+        delBtn.addEventListener('click', () => confirmAction(`Delete task “${boardState.tasks[taskId].title}”?`, () => {
+          delete boardState.tasks[taskId];
+          saveBoard();
+          renderBoard(searchInput.value || '');
+        }));
+
+        // keyboard support for accessibility
+        card.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') openEditModal(taskId);
+          if (ev.key === 'Delete') confirmAction('Delete this task?', () => { delete boardState.tasks[taskId]; saveBoard(); renderBoard(searchInput.value || ''); });
+        });
+      }
+
+      // Modal controls
+      function openAddModal(defaultColId) {
+        editingTaskId = null;
+        modalTitle.textContent = 'Add Task';
+        taskTitle.value = '';
+        taskDesc.value = '';
+        taskTag.value = '';
+        populateColumnSelect(defaultColId);
+        showModal(modal);
+        taskTitle.focus();
+      }
+
+      function openEditModal(taskId) {
+        const task = boardState.tasks[taskId];
+        if (!task) return;
+        editingTaskId = taskId;
+        modalTitle.textContent = 'Edit Task';
+        taskTitle.value = task.title;
+        taskDesc.value = task.desc || '';
+        taskTag.value = task.tag || '';
+        populateColumnSelect(task.column);
+        showModal(modal);
+        taskTitle.focus();
+      }
+
+      function populateColumnSelect(selectedId) {
+        taskColumn.innerHTML = '';
+        boardState.columns.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.title;
+          if (c.id === selectedId) opt.selected = true;
+          taskColumn.appendChild(opt);
+        });
+      }
+
+      function showModal(el) {
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+      }
+      function closeModal(el) {
+        el.classList.remove('flex');
+        el.classList.add('hidden');
+      }
+
+      taskForm.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const title = taskTitle.value.trim();
+        if (!title) return;
+        const desc = taskDesc.value.trim();
+        const col = taskColumn.value;
+        const tag = taskTag.value.trim();
+        if (editingTaskId) {
+          const t = boardState.tasks[editingTaskId];
+          t.title = title; t.desc = desc; t.column = col; t.tag = tag;
+        } else {
+          const id = uid('t');
+          boardState.tasks[id] = { id, title, desc, column: col, tag, created: Date.now() };
+        }
+        saveBoard();
+        renderBoard(searchInput.value || '');
+        closeModal(modal);
+      });
+
+      cancelBtn.addEventListener('click', () => closeModal(modal));
+
+      // menu
+      menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+      document.addEventListener('click', (e) => { if (!menu.contains(e.target) && e.target !== menuBtn) menu.classList.add('hidden'); });
+
+      exportBtn.addEventListener('click', () => {
+        ioArea.value = JSON.stringify(boardState, null, 2);
+        showModal(ioModal);
+      });
+
+      importBtn.addEventListener('click', () => {
+        ioArea.value = '';
+        showModal(ioModal);
+      });
+
+      ioCancel.addEventListener('click', () => closeModal(ioModal));
+      ioImport.addEventListener('click', () => {
+        try {
+          const parsed = JSON.parse(ioArea.value);
+          if (!parsed || !parsed.columns || !parsed.tasks) throw new Error('Invalid format');
+          boardState = parsed;
+          saveBoard();
+          renderBoard();
+          closeModal(ioModal);
+        } catch (e) {
+          alert('Invalid JSON. Make sure you paste the exported board format.');
+        }
+      });
+
+      clearBtn.addEventListener('click', () => confirmAction('Clear entire board? This will remove ALL tasks.', () => {
+        boardState.tasks = {};
+        saveBoard();
+        renderBoard();
+      }));
+
+      // confirm modal
+      function confirmAction(message, cb) {
+        confirmMsg.textContent = message;
+        showModal(confirmModal);
+        function ok() { cb(); closeModal(confirmModal); cleanup(); }
+        function cancel() { closeModal(confirmModal); cleanup(); }
+        function cleanup() { confirmOk.removeEventListener('click', ok); confirmCancel.removeEventListener('click', cancel); }
+        confirmOk.addEventListener('click', ok);
+        confirmCancel.addEventListener('click', cancel);
+      }
+
+      // search
+      let searchDebounce = null;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => renderBoard(searchInput.value), 175);
+      });
+
+      // theme toggle
+      function setTheme(dark) {
+        if (dark) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark');
+        themeToggle.setAttribute('aria-pressed', dark ? 'true' : 'false');
+      }
+      themeToggle.addEventListener('click', () => { const isDark = document.documentElement.classList.contains('dark'); setTheme(!isDark); });
+
+      // utils
+      function timeSince(ts) {
+        if (!ts) return '';
+        const s = Math.floor((Date.now() - ts) / 1000);
+        if (s < 60) return s + 's';
+        const m = Math.floor(s/60);
+        if (m < 60) return m + 'm';
+        const h = Math.floor(m/60);
+        if (h < 24) return h + 'h';
+        const d = Math.floor(h/24);
+        return d + 'd';
+      }
+
+      // Column movement
+      function moveColumn(colId, dir) {
+        const idx = boardState.columns.findIndex(c => c.id === colId);
+        if (idx === -1) return;
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= boardState.columns.length) return;
+        const [col] = boardState.columns.splice(idx, 1);
+        boardState.columns.splice(newIdx, 0, col);
+        saveBoard();
+        renderBoard(searchInput.value || '');
+      }
+
+      // init
+      loadBoard();
+      renderBoard();
+
+      addBtn.addEventListener('click', () => openAddModal(boardState.columns[0].id));
+
+      // keyboard shortcuts
+      document.addEventListener('keydown', (ev) => {
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+          ev.preventDefault(); searchInput.focus();
+        }
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'n') {
+          ev.preventDefault(); openAddModal(boardState.columns[0].id);
+        }
+      });
+
+      // small accessibility: pressing on board with no tasks
+      boardEl.addEventListener('click', (e) => {
+        const quick = e.target.closest('.quick-add');
+        if (quick) return; // handled above
+      });
+
+      // close modals on ESC
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeModal(modal); closeModal(ioModal); closeModal(confirmModal);
+        }
+      });
+
+      // helper: click outside modal to close
+      [modal, ioModal, confirmModal].forEach(m => {
+        m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); });
+      });
+
+      // initial theme from prefers-color-scheme
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(prefersDark);
+
+    })();
+  </script>
+</body>
+</html>

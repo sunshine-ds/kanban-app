@@ -1,643 +1,451 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" class="antialiased">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Kanban Board — Responsive Drag & Drop</title>
-  <meta name="description" content="A responsive, accessible Kanban board with drag & drop built with Tailwind CSS and vanilla JavaScript." />
+  <title>FlowBoard — Kanban + Idea Board with Themes</title>
+  <meta name="description" content="A responsive Kanban + Idea board with light/dark themes and persistent storage." />
+
+  <!-- Tailwind CDN + config (dark mode by class) -->
+  <script>
+    window.tailwind = { config: { darkMode: 'class', theme: { extend: { colors: { 'brand': '#5b21b6' } } } } };
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
-    /* tiny helpers beyond Tailwind */
-    .task-ghost {
-      position: fixed;
-      pointer-events: none;
-      z-index: 9999;
-      transform: translate(-50%, -50%);
-      width: 18rem;
-      max-width: calc(100vw - 2rem);
-      opacity: 0.95;
-    }
-    .column-drop-highlight {
-      outline: 3px dashed rgba(59,130,246,0.35);
-      outline-offset: -10px;
-      transition: outline-offset 0.12s ease;
-    }
-    /* smooth card movement */
-    .task-card { transition: box-shadow .12s ease, transform .12s ease; }
-    .task-card:active { transform: scale(.995); }
+    /* Small helper for scroll shadow */
+    .scroll-x::-webkit-scrollbar { height: 10px; }
+    .scroll-x::-webkit-scrollbar-thumb { background: rgba(100,100,100,0.2); border-radius: 999px; }
   </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 min-h-screen">
-  <div class="max-w-7xl mx-auto p-4">
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+  <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+    <!-- Header -->
+    <header class="flex items-center justify-between gap-4">
       <div class="flex items-center gap-4">
-        <svg class="w-10 h-10 text-blue-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-          <rect x="2" y="4" width="8" height="16" rx="2" fill="currentColor" opacity=".85" />
-          <rect x="9" y="4" width="13" height="9" rx="2" fill="currentColor" opacity=".5" />
-        </svg>
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-brand to-purple-500 flex items-center justify-center shadow-lg text-white text-lg font-semibold">FB</div>
         <div>
-          <h1 class="text-xl font-semibold">Kanban Board</h1>
-          <p class="text-sm text-gray-500 dark:text-gray-400">Drag & drop tasks between columns • Mobile touch support • Persistent</p>
+          <h1 class="text-xl sm:text-2xl font-semibold tracking-tight">FlowBoard</h1>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Kanban & Idea board — light/dark themes, drag & drop, persistent storage</p>
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
-        <input id="searchInput" type="search" placeholder="Search tasks..." class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="Search tasks" />
-
-        <button id="addBtn" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow" aria-haspopup="dialog">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Add Task
-        </button>
-
+      <div class="flex items-center gap-3">
+        <!-- Board selector -->
         <div class="relative">
-          <button id="menuBtn" class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">Menu</button>
-          <div id="menu" class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
-            <button id="exportBtn" class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">Export JSON</button>
-            <button id="importBtn" class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">Import JSON</button>
-            <button id="clearBtn" class="w-full text-left px-3 py-2 text-red-600 hover:bg-gray-50 dark:hover:bg-gray-700">Clear Board</button>
-          </div>
+          <select id="boardSelect" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm py-2 px-3 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <!-- populated by JS -->
+          </select>
         </div>
 
-        <button id="themeToggle" class="p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700" aria-pressed="false" title="Toggle theme">
-          <svg id="themeIcon" class="w-5 h-5" viewBox="0 0 24 24" fill="none"><path d="M12 3v2M12 19v2M4.22 4.22 5.64 5.64M18.36 18.36 19.78 19.78M1 12h2M21 12h2M4.22 19.78 5.64 18.36M18.36 5.64 19.78 4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <!-- New board button (quick) -->
+        <button id="newBoardBtn" class="inline-flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md text-sm shadow hover:shadow-md transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          New Board
+        </button>
+
+        <!-- Theme toggle -->
+        <button id="themeToggle" aria-label="Toggle theme" class="p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow hover:shadow-md transition">
+          <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-yellow-500" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a.75.75 0 01.75.75V4.5a.75.75 0 01-1.5 0V2.75A.75.75 0 0110 2zM10 15.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9zM3.22 4.22a.75.75 0 011.06 0l1.06 1.06a.75.75 0 11-1.06 1.06L3.22 5.28a.75.75 0 010-1.06zM15.66 14.66a.75.75 0 011.06 0l1.06 1.06a.75.75 0 11-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zM2 10a.75.75 0 01.75-.75H4.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm13.5 0a.75.75 0 01.75-.75h1.75a.75.75 0 010 1.5H16.25a.75.75 0 01-.75-.75zM3.22 15.78a.75.75 0 010-1.06l1.06-1.06a.75.75 0 111.06 1.06L4.28 15.78a.75.75 0 01-1.06 0zM15.66 5.34a.75.75 0 010-1.06l1.06-1.06a.75.75 0 111.06 1.06L16.72 5.34a.75.75 0 01-1.06 0z"/></svg>
         </button>
       </div>
     </header>
 
+    <!-- Main app area -->
     <main class="mt-6">
-      <div id="board" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- columns will be injected here -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <h2 id="boardTitle" class="text-lg font-medium">Board</h2>
+          <span id="boardDesc" class="text-sm text-gray-500 dark:text-gray-400">Manage tasks and ideas</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input id="search" type="search" placeholder="Search cards..." class="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none" />
+          <button id="clearBoard" class="px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md border border-red-100 dark:border-red-700 text-sm hover:opacity-90">Clear</button>
+          <button id="exportBoard" class="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md text-sm">Export</button>
+        </div>
       </div>
+
+      <!-- Columns area (scrollable on small screens) -->
+      <div id="boardArea" class="flex gap-4 overflow-x-auto scroll-x py-2 pb-6">
+        <!-- columns rendered by JS -->
+      </div>
+
+      <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">Tip: Drag cards between columns. Changes are saved automatically in your browser.</p>
     </main>
 
-    <footer class="mt-8 text-sm text-gray-500 dark:text-gray-400">Built with ❤️ • Data stored in your browser (localStorage)</footer>
-  </div>
-
-  <!-- Add / Edit Modal -->
-  <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-40">
-    <div class="w-full max-w-lg p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-      <h2 id="modalTitle" class="text-lg font-semibold mb-3">Add Task</h2>
-      <form id="taskForm" class="space-y-3">
-        <div>
-          <label class="block text-sm font-medium mb-1">Title</label>
-          <input id="taskTitle" required class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+    <!-- Edit / Create Modal -->
+    <div id="modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40">
+      <div class="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6">
+        <div class="flex items-center justify-between">
+          <h3 id="modalTitle" class="text-lg font-semibold">Edit card</h3>
+          <button id="closeModal" class="text-gray-500 hover:text-gray-700 dark:text-gray-300">Close</button>
         </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Description</label>
-          <textarea id="taskDesc" rows="3" class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"></textarea>
-        </div>
-        <div class="flex gap-2 items-center">
-          <div class="flex-1">
-            <label class="block text-sm font-medium mb-1">Column</label>
-            <select id="taskColumn" class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"></select>
+        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="text-sm text-gray-600 dark:text-gray-400">Title</label>
+            <input id="cardTitleInput" class="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Label</label>
-            <input id="taskTag" placeholder="e.g. UI, Bug" class="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+            <label class="text-sm text-gray-600 dark:text-gray-400">Tag</label>
+            <input id="cardTagInput" class="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" placeholder="e.g. idea, bug, research" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="text-sm text-gray-600 dark:text-gray-400">Details</label>
+            <textarea id="cardDetailInput" rows="4" class="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"></textarea>
           </div>
         </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" id="cancelBtn" class="px-4 py-2 rounded-lg border border-gray-300">Cancel</button>
-          <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Export / Import Modal -->
-  <div id="ioModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-40">
-    <div class="w-full max-w-2xl p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-      <h3 class="text-lg font-semibold mb-3">Export / Import Board JSON</h3>
-      <textarea id="ioArea" rows="10" class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 font-mono text-sm"></textarea>
-      <div class="flex justify-between items-center mt-3">
-        <div class="text-sm text-gray-500">You can copy the JSON to backup or paste JSON to restore.</div>
-        <div class="flex gap-2">
-          <button id="ioCancel" class="px-4 py-2 border rounded">Close</button>
-          <button id="ioImport" class="px-4 py-2 bg-green-600 text-white rounded">Import</button>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button id="deleteCardBtn" class="px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 rounded-md border border-red-100 dark:border-red-700 text-sm">Delete</button>
+          <button id="saveCardBtn" class="px-4 py-2 bg-brand text-white rounded-md shadow-sm">Save</button>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Confirm Modal -->
-  <div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-40">
-    <div class="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-      <h4 class="text-lg font-semibold mb-2">Confirm</h4>
-      <p id="confirmMsg" class="text-sm text-gray-600 dark:text-gray-300 mb-4">Are you sure?</p>
-      <div class="flex justify-end gap-2">
-        <button id="confirmCancel" class="px-4 py-2 border rounded">Cancel</button>
-        <button id="confirmOk" class="px-4 py-2 bg-red-600 text-white rounded">Yes, proceed</button>
-      </div>
-    </div>
+    <!-- Hidden template for column (for accessibility / fallback) -->
+    <template id="columnTemplate">
+      <section class="min-w-[280px] max-w-sm bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold">Column</h3>
+          <div class="flex items-center gap-2">
+            <button class="inline-flex items-center gap-2 px-2 py-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-xs">Add</button>
+            <button class="inline-flex items-center justify-center w-8 h-8 rounded-md text-sm text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">⋮</button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <input class="addCardInput w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" placeholder="Add a card and press Enter" />
+        </div>
+        <div class="space-y-3 columnDrop" aria-live="polite"></div>
+      </section>
+    </template>
+
   </div>
 
   <script>
-    // Kanban App Script
-    (function () {
-      // Columns definition
-      const DEFAULT_COLUMNS = [
-        { id: 'todo', title: 'To Do' },
-        { id: 'inprogress', title: 'In Progress' },
-        { id: 'done', title: 'Done' }
-      ];
+    /* ---------- App Data & Utilities ---------- */
+    const STORAGE_KEY = 'flowboard_v1';
 
-      const STORAGE_KEY = 'kanbanBoardV1';
+    // Default boards: one project board + the requested Idea Board
+    const defaultBoards = [
+      {
+        id: idGen(),
+        title: 'Project Board',
+        description: 'Track tasks and progress',
+        columns: [
+          { id: idGen(), title: 'Backlog', cards: [ { id: idGen(), title: 'Plan roadmap', tag: 'planning', detail: 'Define milestones for Q3' } ] },
+          { id: idGen(), title: 'In Progress', cards: [ { id: idGen(), title: 'Design landing', tag: 'design', detail: 'Hero section & CTA' } ] },
+          { id: idGen(), title: 'Done', cards: [ { id: idGen(), title: 'Setup repo', tag: 'devops', detail: 'Initialize GitHub repository' } ] }
+        ]
+      },
 
-      // Elements
-      const boardEl = document.getElementById('board');
-      const addBtn = document.getElementById('addBtn');
-      const modal = document.getElementById('modal');
-      const modalTitle = document.getElementById('modalTitle');
-      const taskForm = document.getElementById('taskForm');
-      const taskTitle = document.getElementById('taskTitle');
-      const taskDesc = document.getElementById('taskDesc');
-      const taskColumn = document.getElementById('taskColumn');
-      const taskTag = document.getElementById('taskTag');
-      const cancelBtn = document.getElementById('cancelBtn');
-      const searchInput = document.getElementById('searchInput');
-      const menuBtn = document.getElementById('menuBtn');
-      const menu = document.getElementById('menu');
-      const exportBtn = document.getElementById('exportBtn');
-      const importBtn = document.getElementById('importBtn');
-      const clearBtn = document.getElementById('clearBtn');
-      const ioModal = document.getElementById('ioModal');
-      const ioArea = document.getElementById('ioArea');
-      const ioCancel = document.getElementById('ioCancel');
-      const ioImport = document.getElementById('ioImport');
-      const themeToggle = document.getElementById('themeToggle');
-      const themeIcon = document.getElementById('themeIcon');
-      const confirmModal = document.getElementById('confirmModal');
-      const confirmMsg = document.getElementById('confirmMsg');
-      const confirmOk = document.getElementById('confirmOk');
-      const confirmCancel = document.getElementById('confirmCancel');
-
-      let boardState = null; // will be object {columns:[], tasks:{id:task}}
-      let editingTaskId = null;
-
-      // Touch/drag state
-      let touchGhost = null;
-      let draggingEl = null;
-      let lastDropColumn = null;
-
-      // Utilities
-      function uid(prefix = '') {
-        return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      // The new Idea Board requested in the brief
+      {
+        id: idGen(),
+        title: 'Idea Board',
+        description: 'Capture ideas, research and prototypes',
+        columns: [
+          { id: idGen(), title: 'Ideas', cards: [ { id: idGen(), title: 'Smart tags for notes', tag: 'idea', detail: 'Auto-suggest tags based on content' }, { id: idGen(), title: 'Offline sync', tag: 'idea', detail: 'PWA-like offline support' } ] },
+          { id: idGen(), title: 'Research', cards: [ { id: idGen(), title: 'Market fit survey', tag: 'research', detail: 'Create short user survey for target segment' } ] },
+          { id: idGen(), title: 'Prototype', cards: [] }
+        ]
       }
+    ];
 
-      function saveBoard() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(boardState));
-      }
+    let app = { boards: [], currentBoardId: null };
 
-      function loadBoard() {
+    // Simple id generator
+    function idGen() { return 'id-' + Math.random().toString(36).slice(2, 9); }
+
+    function load() {
+      try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-          try {
-            boardState = JSON.parse(raw);
-            // ensure columns exist
-            if (!Array.isArray(boardState.columns)) boardState.columns = DEFAULT_COLUMNS;
-            if (!boardState.tasks) boardState.tasks = {};
-            return;
-          } catch (e) {
-            console.error('Failed to parse board state', e);
-          }
+          app = JSON.parse(raw);
+        } else {
+          app = { boards: defaultBoards, currentBoardId: defaultBoards[0].id };
+          save();
         }
-        // default seed
-        boardState = {
-          columns: DEFAULT_COLUMNS,
-          tasks: {
-            't1': { id: 't1', title: 'Design landing', desc: 'Create hero and CTA', column: 'todo', tag: 'Design', created: Date.now() },
-            't2': { id: 't2', title: 'Fix login bug', desc: 'Error 500 when logging in', column: 'inprogress', tag: 'Bug', created: Date.now() },
-            't3': { id: 't3', title: 'Write docs', desc: 'Add README for the project', column: 'done', tag: 'Docs', created: Date.now() }
-          }
-        };
-        saveBoard();
+      } catch (e) {
+        console.error('Failed to load storage', e);
+        app = { boards: defaultBoards, currentBoardId: defaultBoards[0].id };
+        save();
       }
+    }
 
-      function renderBoard(filter = '') {
-        boardEl.innerHTML = '';
-        const filterText = filter.trim().toLowerCase();
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(app)); }
 
-        boardState.columns.forEach(col => {
-          const colWrapper = document.createElement('section');
-          colWrapper.className = 'bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm flex flex-col min-h-[12rem]';
-          colWrapper.setAttribute('data-column-id', col.id);
-          colWrapper.setAttribute('aria-labelledby', `col-${col.id}-title`);
+    /* ---------- Theme Handling ---------- */
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const htmlEl = document.documentElement;
 
-          // column header
-          const header = document.createElement('div');
-          header.className = 'flex items-center justify-between mb-3';
-          header.innerHTML = `
-            <div class="flex items-center gap-2">
-              <h3 id="col-${col.id}-title" class="text-sm font-semibold">${escapeHtml(col.title)}</h3>
-              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">${countTasksIn(col.id)}</span>
-            </div>
-            <div class="flex gap-1">
-              <button class="move-col-left text-gray-400 hover:text-gray-600 px-2 py-1 rounded" title="Move column left">◀</button>
-              <button class="move-col-right text-gray-400 hover:text-gray-600 px-2 py-1 rounded" title="Move column right">▶</button>
+    function applyTheme(theme) {
+      if (theme === 'dark') htmlEl.classList.add('dark'); else htmlEl.classList.remove('dark');
+      localStorage.setItem('flowboard_theme', theme);
+      updateThemeIcon(theme);
+    }
+
+    function updateThemeIcon(theme) {
+      // swap icon color & path quickly
+      if (theme === 'dark') {
+        themeIcon.innerHTML = '<path d="M17.293 13.293A8 8 0 118.707 4.707 6 6 0 1017.293 13.293z"/>';
+      } else {
+        themeIcon.innerHTML = '<path d="M10 2a.75.75 0 01.75.75V4.5a.75.75 0 01-1.5 0V2.75A.75.75 0 0110 2zM10 15.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9zM3.22 4.22a.75.75 0 011.06 0l1.06 1.06a.75.75 0 11-1.06 1.06L3.22 5.28a.75.75 0 010-1.06zM15.66 14.66a.75.75 0 011.06 0l1.06 1.06a.75.75 0 11-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zM2 10a.75.75 0 01.75-.75H4.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm13.5 0a.75.75 0 01.75-.75h1.75a.75.75 0 010 1.5H16.25a.75.75 0 01-.75-.75zM3.22 15.78a.75.75 0 010-1.06l1.06-1.06a.75.75 0 111.06 1.06L4.28 15.78a.75.75 0 01-1.06 0zM15.66 5.34a.75.75 0 010-1.06l1.06-1.06a.75.75 0 111.06 1.06L16.72 5.34a.75.75 0 01-1.06 0z"/>';
+      }
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const current = localStorage.getItem('flowboard_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    // Initialize theme on load
+    (function initTheme() {
+      const saved = localStorage.getItem('flowboard_theme');
+      const defaultTheme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      applyTheme(defaultTheme);
+    })();
+
+    /* ---------- DOM References ---------- */
+    const boardSelect = document.getElementById('boardSelect');
+    const boardTitle = document.getElementById('boardTitle');
+    const boardDesc = document.getElementById('boardDesc');
+    const boardArea = document.getElementById('boardArea');
+    const columnTemplate = document.getElementById('columnTemplate');
+    const newBoardBtn = document.getElementById('newBoardBtn');
+    const searchInput = document.getElementById('search');
+    const clearBoardBtn = document.getElementById('clearBoard');
+    const exportBoardBtn = document.getElementById('exportBoard');
+
+    // Modal
+    const modal = document.getElementById('modal');
+    const closeModal = document.getElementById('closeModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const cardTitleInput = document.getElementById('cardTitleInput');
+    const cardTagInput = document.getElementById('cardTagInput');
+    const cardDetailInput = document.getElementById('cardDetailInput');
+    const saveCardBtn = document.getElementById('saveCardBtn');
+    const deleteCardBtn = document.getElementById('deleteCardBtn');
+
+    let editing = { boardId: null, columnId: null, cardId: null };
+
+    /* ---------- Rendering ---------- */
+    function renderBoardsList() {
+      boardSelect.innerHTML = '';
+      app.boards.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = b.title;
+        boardSelect.appendChild(opt);
+      });
+      boardSelect.value = app.currentBoardId;
+    }
+
+    function render() {
+      renderBoardsList();
+      const board = app.boards.find(b => b.id === app.currentBoardId) || app.boards[0];
+      if (!board) return;
+      boardTitle.textContent = board.title;
+      boardDesc.textContent = board.description || '';
+
+      boardArea.innerHTML = '';
+      board.columns.forEach(col => {
+        const node = columnTemplate.content.cloneNode(true);
+        const sec = node.querySelector('section');
+        sec.dataset.colId = col.id;
+        sec.querySelector('h3').textContent = `${col.title} (${col.cards.length})`;
+        const addInput = sec.querySelector('.addCardInput');
+        const columnDrop = sec.querySelector('.columnDrop');
+        addInput.addEventListener('keydown', e => {
+          if (e.key === 'Enter' && addInput.value.trim()) {
+            const newCard = { id: idGen(), title: addInput.value.trim(), tag: '', detail: '' };
+            col.cards.unshift(newCard);
+            addInput.value = '';
+            save(); render();
+          }
+        });
+
+        // Drag & drop events on column
+        columnDrop.addEventListener('dragover', e => { e.preventDefault(); sec.classList.add('ring-2', 'ring-brand', 'ring-opacity-40'); });
+        columnDrop.addEventListener('dragleave', e => { sec.classList.remove('ring-2', 'ring-brand', 'ring-opacity-40'); });
+        columnDrop.addEventListener('drop', e => {
+          e.preventDefault(); sec.classList.remove('ring-2', 'ring-brand', 'ring-opacity-40');
+          const cardId = e.dataTransfer.getData('text/card');
+          const fromColId = e.dataTransfer.getData('text/fromCol');
+          if (!cardId) return;
+          moveCard(board.id, fromColId, col.id, cardId);
+        });
+
+        // Render cards
+        col.cards.forEach(card => {
+          const cardEl = document.createElement('article');
+          cardEl.className = 'bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-md p-3 shadow-sm cursor-move';
+          cardEl.draggable = true;
+          cardEl.dataset.cardId = card.id;
+          cardEl.innerHTML = `
+            <div class=\"flex items-start justify-between gap-2\"> 
+              <div class=\"min-w-0\"> 
+                <h4 class=\"font-medium truncate\">${escapeHtml(card.title)}</h4>
+                <p class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 truncate\">${escapeHtml(card.tag || '')}</p>
+              </div>
+              <div class=\"flex items-center gap-1\"> 
+                <button class=\"text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"Edit\">✎</button>
+              </div>
             </div>
           `;
-          colWrapper.appendChild(header);
 
-          // drop area
-          const dropArea = document.createElement('div');
-          dropArea.className = 'flex-1 flex flex-col gap-3';
-          dropArea.setAttribute('data-drop-area', col.id);
-          dropArea.setAttribute('tabindex', '0');
-
-          // add tasks
-          const tasks = Object.values(boardState.tasks)
-            .filter(t => t.column === col.id)
-            .filter(t => !filterText || (t.title + ' ' + (t.desc||'') + ' ' + (t.tag||'')).toLowerCase().includes(filterText))
-            .sort((a,b)=> (b.created||0) - (a.created||0));
-
-          tasks.forEach(task => {
-            const card = document.createElement('article');
-            card.className = 'task-card bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 p-3 rounded-lg shadow-sm cursor-grab';
-            card.setAttribute('draggable', 'true');
-            card.setAttribute('data-task-id', task.id);
-            card.setAttribute('role', 'article');
-            card.innerHTML = `
-              <div class="flex items-start justify-between gap-2">
-                <div class="flex-1">
-                  <h4 class="font-medium">${escapeHtml(task.title)}</h4>
-                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${escapeHtml(task.desc||'')}</p>
-                  ${task.tag ? `<div class="inline-block mt-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">${escapeHtml(task.tag)}</div>` : ''}
-                </div>
-                <div class="flex flex-col items-end gap-2">
-                  <div class="text-xs text-gray-400">${timeSince(task.created)}</div>
-                  <div class="flex gap-1">
-                    <button class="edit-task text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">Edit</button>
-                    <button class="delete-task text-sm px-2 py-1 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-700">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `;
-
-            // events
-            setupDragFor(card);
-            setupCardButtons(card, task.id);
-
-            dropArea.appendChild(card);
+          // Click to open edit modal
+          cardEl.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            openEditModal(board.id, col.id, card.id);
           });
 
-          // empty state
-          if (tasks.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'text-center text-sm text-gray-400 mt-4';
-            empty.textContent = 'No tasks';
-            dropArea.appendChild(empty);
-          }
-
-          // drop handlers on area
-          dropArea.addEventListener('dragover', ev => {
-            ev.preventDefault();
-            colWrapper.classList.add('column-drop-highlight');
+          // Drag events
+          cardEl.addEventListener('dragstart', (ev) => {
+            ev.dataTransfer.setData('text/card', card.id);
+            ev.dataTransfer.setData('text/fromCol', col.id);
+            ev.dataTransfer.effectAllowed = 'move';
+            cardEl.classList.add('opacity-60');
           });
-          dropArea.addEventListener('dragleave', ev => {
-            colWrapper.classList.remove('column-drop-highlight');
-          });
-          dropArea.addEventListener('drop', ev => {
-            ev.preventDefault();
-            colWrapper.classList.remove('column-drop-highlight');
-            const taskId = ev.dataTransfer && ev.dataTransfer.getData('text/plain');
-            if (taskId) moveTaskToColumn(taskId, col.id);
-          });
+          cardEl.addEventListener('dragend', (ev) => { cardEl.classList.remove('opacity-60'); });
 
-          // keyboard move support: pressing Enter while focused prompts to add
-          dropArea.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Enter') {
-              openAddModal(col.id);
-            }
-          });
-
-          colWrapper.appendChild(dropArea);
-
-          // footer - add quick add button
-          const footer = document.createElement('div');
-          footer.className = 'mt-3 text-right';
-          footer.innerHTML = `<button class="quick-add px-3 py-1 bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-200 rounded">+ Add</button>`;
-          footer.querySelector('.quick-add').addEventListener('click', () => openAddModal(col.id));
-
-          colWrapper.appendChild(footer);
-
-          boardEl.appendChild(colWrapper);
+          columnDrop.appendChild(cardEl);
         });
 
-        // attach column move handlers
-        document.querySelectorAll('.move-col-left').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            const colId = e.target.closest('[data-column-id]').getAttribute('data-column-id');
-            moveColumn(colId, -1);
-          });
+        boardArea.appendChild(sec);
+      });
+    }
+
+    function escapeHtml(str = '') {
+      return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[s]);
+    }
+
+    /* ---------- Card Operations ---------- */
+    function findBoard(boardId) { return app.boards.find(b => b.id === boardId); }
+
+    function moveCard(boardId, fromColId, toColId, cardId) {
+      const board = findBoard(boardId);
+      if (!board) return;
+      const fromCol = board.columns.find(c => c.id === fromColId);
+      const toCol = board.columns.find(c => c.id === toColId);
+      if (!fromCol || !toCol) return;
+      const idx = fromCol.cards.findIndex(c => c.id === cardId);
+      if (idx === -1) return;
+      const [card] = fromCol.cards.splice(idx, 1);
+      toCol.cards.unshift(card);
+      save(); render();
+    }
+
+    function openEditModal(boardId, columnId, cardId) {
+      const board = findBoard(boardId);
+      const col = board.columns.find(c => c.id === columnId);
+      const card = col.cards.find(c => c.id === cardId);
+      editing = { boardId, columnId, cardId };
+      modalTitle.textContent = 'Edit card';
+      cardTitleInput.value = card.title || '';
+      cardTagInput.value = card.tag || '';
+      cardDetailInput.value = card.detail || '';
+      deleteCardBtn.style.display = 'inline-block';
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      cardTitleInput.focus();
+    }
+
+    function closeEditModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); editing = { boardId: null, columnId: null, cardId: null }; }
+
+    saveCardBtn.addEventListener('click', () => {
+      const { boardId, columnId, cardId } = editing;
+      if (!boardId) return closeEditModal();
+      const board = findBoard(boardId);
+      const col = board.columns.find(c => c.id === columnId);
+      const card = col.cards.find(c => c.id === cardId);
+      card.title = cardTitleInput.value.trim() || 'Untitled';
+      card.tag = cardTagInput.value.trim();
+      card.detail = cardDetailInput.value.trim();
+      save(); render(); closeEditModal();
+    });
+
+    deleteCardBtn.addEventListener('click', () => {
+      const { boardId, columnId, cardId } = editing;
+      if (!boardId) return closeEditModal();
+      const board = findBoard(boardId);
+      const col = board.columns.find(c => c.id === columnId);
+      col.cards = col.cards.filter(c => c.id !== cardId);
+      save(); render(); closeEditModal();
+    });
+
+    closeModal.addEventListener('click', closeEditModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeEditModal(); });
+
+    /* ---------- Board CRUD ---------- */
+    newBoardBtn.addEventListener('click', () => {
+      const name = prompt('Board name (e.g. Marketing, Personal, Idea Board)');
+      if (!name) return;
+      const id = idGen();
+      const newBoard = { id, title: name, description: '', columns: [ { id: idGen(), title: 'To Do', cards: [] }, { id: idGen(), title: 'In Progress', cards: [] }, { id: idGen(), title: 'Done', cards: [] } ] };
+      app.boards.push(newBoard);
+      app.currentBoardId = id;
+      save(); render();
+    });
+
+    boardSelect.addEventListener('change', () => {
+      app.currentBoardId = boardSelect.value;
+      save(); render();
+    });
+
+    clearBoardBtn.addEventListener('click', () => {
+      if (!confirm('Clear all cards from this board? This cannot be undone.')) return;
+      const b = findBoard(app.currentBoardId);
+      b.columns.forEach(c => c.cards = []);
+      save(); render();
+    });
+
+    exportBoardBtn.addEventListener('click', () => {
+      const b = findBoard(app.currentBoardId);
+      const data = JSON.stringify(b, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${b.title.replace(/\s+/g,'-').toLowerCase() || 'board'}.json`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    /* ---------- Search ---------- */
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q) return render();
+      const b = findBoard(app.currentBoardId);
+      // Render only matching cards (quick client-side filter)
+      boardTitle.textContent = `${b.title} — Search: "${q}"`;
+      boardArea.innerHTML = '';
+      b.columns.forEach(col => {
+        const node = columnTemplate.content.cloneNode(true);
+        const sec = node.querySelector('section');
+        sec.querySelector('h3').textContent = `${col.title} (${col.cards.length})`;
+        const addInput = sec.querySelector('.addCardInput');
+        const columnDrop = sec.querySelector('.columnDrop');
+        addInput.addEventListener('keydown', e => { if (e.key === 'Enter' && addInput.value.trim()) { col.cards.unshift({ id: idGen(), title: addInput.value.trim(), tag:'', detail: '' }); addInput.value=''; save(); render(); } });
+        col.cards.filter(c => (c.title + ' ' + (c.detail||'') + ' ' + (c.tag||'')).toLowerCase().includes(q)).forEach(card => {
+          const cardEl = document.createElement('article');
+          cardEl.className = 'bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-md p-3 shadow-sm cursor-move';
+          cardEl.innerHTML = `<div class=\"flex items-start justify-between gap-2\"><div class=\"min-w-0\"><h4 class=\"font-medium truncate\">${escapeHtml(card.title)}</h4><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 truncate\">${escapeHtml(card.tag || '')}</p></div></div>`;
+          cardEl.addEventListener('click', () => openEditModal(b.id, col.id, card.id));
+          columnDrop.appendChild(cardEl);
         });
-        document.querySelectorAll('.move-col-right').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            const colId = e.target.closest('[data-column-id]').getAttribute('data-column-id');
-            moveColumn(colId, +1);
-          });
-        });
-      }
-
-      function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      }
-
-      function countTasksIn(colId) {
-        return Object.values(boardState.tasks).filter(t => t.column === colId).length;
-      }
-
-      // Drag & drop
-      function setupDragFor(card) {
-        card.addEventListener('dragstart', (ev) => {
-          const id = card.getAttribute('data-task-id');
-          ev.dataTransfer.setData('text/plain', id);
-          ev.dataTransfer.effectAllowed = 'move';
-          card.classList.add('opacity-80');
-          draggingEl = card;
-        });
-        card.addEventListener('dragend', () => {
-          if (draggingEl) draggingEl.classList.remove('opacity-80');
-          draggingEl = null;
-        });
-
-        // touch fallback
-        card.addEventListener('touchstart', touchStartHandler, { passive: false });
-      }
-
-      function touchStartHandler(ev) {
-        const touch = ev.touches[0];
-        ev.preventDefault();
-        const card = ev.currentTarget;
-        const id = card.getAttribute('data-task-id');
-
-        // create ghost
-        touchGhost = card.cloneNode(true);
-        touchGhost.classList.add('task-ghost');
-        document.body.appendChild(touchGhost);
-        moveGhost(touch);
-        draggingEl = card;
-        lastDropColumn = null;
-
-        function onTouchMove(e) {
-          const t = e.touches[0];
-          moveGhost(t);
-          const el = document.elementFromPoint(t.clientX, t.clientY);
-          const dropArea = el && el.closest('[data-drop-area]');
-          document.querySelectorAll('[data-column-id]').forEach(c => c.classList.remove('column-drop-highlight'));
-          if (dropArea) {
-            const colWrap = dropArea.closest('[data-column-id]');
-            if (colWrap) {
-              colWrap.classList.add('column-drop-highlight');
-              lastDropColumn = dropArea.getAttribute('data-drop-area');
-            }
-          } else {
-            lastDropColumn = null;
-          }
-        }
-
-        function onTouchEnd(e) {
-          document.removeEventListener('touchmove', onTouchMove);
-          document.removeEventListener('touchend', onTouchEnd);
-          if (touchGhost && touchGhost.parentNode) touchGhost.parentNode.removeChild(touchGhost);
-          document.querySelectorAll('[data-column-id]').forEach(c => c.classList.remove('column-drop-highlight'));
-          if (lastDropColumn) moveTaskToColumn(id, lastDropColumn);
-          draggingEl = null;
-          touchGhost = null;
-          lastDropColumn = null;
-        }
-
-        document.addEventListener('touchmove', onTouchMove, { passive: false });
-        document.addEventListener('touchend', onTouchEnd);
-      }
-
-      function moveGhost(touch) {
-        if (!touchGhost) return;
-        touchGhost.style.top = (touch.clientY) + 'px';
-        touchGhost.style.left = (touch.clientX) + 'px';
-      }
-
-      function moveTaskToColumn(taskId, columnId) {
-        const task = boardState.tasks[taskId];
-        if (!task) return;
-        task.column = columnId;
-        saveBoard();
-        renderBoard(searchInput.value || '');
-      }
-
-      // Card action buttons (edit/delete)
-      function setupCardButtons(card, taskId) {
-        const editBtn = card.querySelector('.edit-task');
-        const delBtn = card.querySelector('.delete-task');
-        editBtn.addEventListener('click', () => openEditModal(taskId));
-        delBtn.addEventListener('click', () => confirmAction(`Delete task “${boardState.tasks[taskId].title}”?`, () => {
-          delete boardState.tasks[taskId];
-          saveBoard();
-          renderBoard(searchInput.value || '');
-        }));
-
-        // keyboard support for accessibility
-        card.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter') openEditModal(taskId);
-          if (ev.key === 'Delete') confirmAction('Delete this task?', () => { delete boardState.tasks[taskId]; saveBoard(); renderBoard(searchInput.value || ''); });
-        });
-      }
-
-      // Modal controls
-      function openAddModal(defaultColId) {
-        editingTaskId = null;
-        modalTitle.textContent = 'Add Task';
-        taskTitle.value = '';
-        taskDesc.value = '';
-        taskTag.value = '';
-        populateColumnSelect(defaultColId);
-        showModal(modal);
-        taskTitle.focus();
-      }
-
-      function openEditModal(taskId) {
-        const task = boardState.tasks[taskId];
-        if (!task) return;
-        editingTaskId = taskId;
-        modalTitle.textContent = 'Edit Task';
-        taskTitle.value = task.title;
-        taskDesc.value = task.desc || '';
-        taskTag.value = task.tag || '';
-        populateColumnSelect(task.column);
-        showModal(modal);
-        taskTitle.focus();
-      }
-
-      function populateColumnSelect(selectedId) {
-        taskColumn.innerHTML = '';
-        boardState.columns.forEach(c => {
-          const opt = document.createElement('option');
-          opt.value = c.id;
-          opt.textContent = c.title;
-          if (c.id === selectedId) opt.selected = true;
-          taskColumn.appendChild(opt);
-        });
-      }
-
-      function showModal(el) {
-        el.classList.remove('hidden');
-        el.classList.add('flex');
-      }
-      function closeModal(el) {
-        el.classList.remove('flex');
-        el.classList.add('hidden');
-      }
-
-      taskForm.addEventListener('submit', (ev) => {
-        ev.preventDefault();
-        const title = taskTitle.value.trim();
-        if (!title) return;
-        const desc = taskDesc.value.trim();
-        const col = taskColumn.value;
-        const tag = taskTag.value.trim();
-        if (editingTaskId) {
-          const t = boardState.tasks[editingTaskId];
-          t.title = title; t.desc = desc; t.column = col; t.tag = tag;
-        } else {
-          const id = uid('t');
-          boardState.tasks[id] = { id, title, desc, column: col, tag, created: Date.now() };
-        }
-        saveBoard();
-        renderBoard(searchInput.value || '');
-        closeModal(modal);
+        boardArea.appendChild(sec);
       });
+    });
 
-      cancelBtn.addEventListener('click', () => closeModal(modal));
+    /* ---------- Init ---------- */
+    load();
+    render();
 
-      // menu
-      menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
-      document.addEventListener('click', (e) => { if (!menu.contains(e.target) && e.target !== menuBtn) menu.classList.add('hidden'); });
+    // Handle drag data for card move across columns
+    // We already set data during dragstart; ensure drop targets exist on entire board area
 
-      exportBtn.addEventListener('click', () => {
-        ioArea.value = JSON.stringify(boardState, null, 2);
-        showModal(ioModal);
-      });
+    /* ---------- Utility: make data resilient on window unload ---------- */
+    window.addEventListener('beforeunload', () => save());
 
-      importBtn.addEventListener('click', () => {
-        ioArea.value = '';
-        showModal(ioModal);
-      });
-
-      ioCancel.addEventListener('click', () => closeModal(ioModal));
-      ioImport.addEventListener('click', () => {
-        try {
-          const parsed = JSON.parse(ioArea.value);
-          if (!parsed || !parsed.columns || !parsed.tasks) throw new Error('Invalid format');
-          boardState = parsed;
-          saveBoard();
-          renderBoard();
-          closeModal(ioModal);
-        } catch (e) {
-          alert('Invalid JSON. Make sure you paste the exported board format.');
-        }
-      });
-
-      clearBtn.addEventListener('click', () => confirmAction('Clear entire board? This will remove ALL tasks.', () => {
-        boardState.tasks = {};
-        saveBoard();
-        renderBoard();
-      }));
-
-      // confirm modal
-      function confirmAction(message, cb) {
-        confirmMsg.textContent = message;
-        showModal(confirmModal);
-        function ok() { cb(); closeModal(confirmModal); cleanup(); }
-        function cancel() { closeModal(confirmModal); cleanup(); }
-        function cleanup() { confirmOk.removeEventListener('click', ok); confirmCancel.removeEventListener('click', cancel); }
-        confirmOk.addEventListener('click', ok);
-        confirmCancel.addEventListener('click', cancel);
-      }
-
-      // search
-      let searchDebounce = null;
-      searchInput.addEventListener('input', () => {
-        clearTimeout(searchDebounce);
-        searchDebounce = setTimeout(() => renderBoard(searchInput.value), 175);
-      });
-
-      // theme toggle
-      function setTheme(dark) {
-        if (dark) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark');
-        themeToggle.setAttribute('aria-pressed', dark ? 'true' : 'false');
-      }
-      themeToggle.addEventListener('click', () => { const isDark = document.documentElement.classList.contains('dark'); setTheme(!isDark); });
-
-      // utils
-      function timeSince(ts) {
-        if (!ts) return '';
-        const s = Math.floor((Date.now() - ts) / 1000);
-        if (s < 60) return s + 's';
-        const m = Math.floor(s/60);
-        if (m < 60) return m + 'm';
-        const h = Math.floor(m/60);
-        if (h < 24) return h + 'h';
-        const d = Math.floor(h/24);
-        return d + 'd';
-      }
-
-      // Column movement
-      function moveColumn(colId, dir) {
-        const idx = boardState.columns.findIndex(c => c.id === colId);
-        if (idx === -1) return;
-        const newIdx = idx + dir;
-        if (newIdx < 0 || newIdx >= boardState.columns.length) return;
-        const [col] = boardState.columns.splice(idx, 1);
-        boardState.columns.splice(newIdx, 0, col);
-        saveBoard();
-        renderBoard(searchInput.value || '');
-      }
-
-      // init
-      loadBoard();
-      renderBoard();
-
-      addBtn.addEventListener('click', () => openAddModal(boardState.columns[0].id));
-
-      // keyboard shortcuts
-      document.addEventListener('keydown', (ev) => {
-        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
-          ev.preventDefault(); searchInput.focus();
-        }
-        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'n') {
-          ev.preventDefault(); openAddModal(boardState.columns[0].id);
-        }
-      });
-
-      // small accessibility: pressing on board with no tasks
-      boardEl.addEventListener('click', (e) => {
-        const quick = e.target.closest('.quick-add');
-        if (quick) return; // handled above
-      });
-
-      // close modals on ESC
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closeModal(modal); closeModal(ioModal); closeModal(confirmModal);
-        }
-      });
-
-      // helper: click outside modal to close
-      [modal, ioModal, confirmModal].forEach(m => {
-        m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); });
-      });
-
-      // initial theme from prefers-color-scheme
-      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(prefersDark);
-
-    })();
   </script>
 </body>
 </html>
